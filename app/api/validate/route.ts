@@ -284,7 +284,14 @@ async function aiValidation(data: any): Promise<ValidationError[]> {
     let response = result.response.text();
     // Remove code block markers if present
     response = response.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-    return JSON.parse(response);
+    // Attempt to fix common JSON issues (single quotes, trailing commas)
+    response = response.replace(/'/g, '"').replace(/,\s*([\]}])/g, '$1');
+    try {
+      return JSON.parse(response);
+    } catch (parseError) {
+      console.error('AI validation JSON parse error:', parseError, '\nResponse:', response);
+      return [];
+    }
   } catch (error) {
     console.error('AI validation error:', error);
     return [];

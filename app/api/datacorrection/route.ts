@@ -1,4 +1,4 @@
-import { NextApiRequest, NextApiResponse } from 'next';
+import { NextRequest, NextResponse } from 'next/server';
 
 interface Priority {
   id: string;
@@ -15,83 +15,75 @@ let priorities: Priority[] = [
   { id: 'phase_preference', name: 'Phase Preference', weight: 0.1, description: 'Preferred phase scheduling' }
 ];
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export async function GET() {
+  return NextResponse.json({ priorities });
+}
+
+export async function POST(request: NextRequest) {
   try {
-    switch (req.method) {
-      case 'GET':
-        res.status(200).json({ priorities });
-        break;
-        
-      case 'POST':
-        const { action, ...payload } = req.body;
-        
-        switch (action) {
-          case 'updateWeights':
-            const { weights } = payload;
-            priorities = priorities.map(p => ({
-              ...p,
-              weight: weights[p.id] || p.weight
-            }));
-            res.status(200).json({ success: true, priorities });
-            break;
-            
-          case 'setPreset':
-            const { preset } = payload;
-            type PriorityId = 'priority_level' | 'task_fulfillment' | 'workload_balance' | 'skill_match' | 'phase_preference';
-            const presets: Record<string, Record<PriorityId, number>> = {
-              'maximize_fulfillment': {
-                priority_level: 0.4,
-                task_fulfillment: 0.35,
-                workload_balance: 0.1,
-                skill_match: 0.1,
-                phase_preference: 0.05
-              },
-              'fair_distribution': {
-                priority_level: 0.2,
-                task_fulfillment: 0.2,
-                workload_balance: 0.4,
-                skill_match: 0.15,
-                phase_preference: 0.05
-              },
-              'minimize_workload': {
-                priority_level: 0.15,
-                task_fulfillment: 0.15,
-                workload_balance: 0.5,
-                skill_match: 0.15,
-                phase_preference: 0.05
-              },
-              'skill_focused': {
-                priority_level: 0.2,
-                task_fulfillment: 0.2,
-                workload_balance: 0.15,
-                skill_match: 0.4,
-                phase_preference: 0.05
-              }
-            };
-            type PresetKey = keyof typeof presets;
-            const presetKey = preset as PresetKey;
-            
-            if (presetKey in presets) {
-              priorities = priorities.map(p => ({
-                ...p,
-                weight: presets[presetKey][p.id as PriorityId] ?? p.weight
-              }));
-              res.status(200).json({ success: true, priorities, preset });
-            } else {
-              res.status(400).json({ error: 'Invalid preset' });
-            }
-            break;
-            
-          default:
-            res.status(400).json({ error: 'Invalid action' });
+    const body = await request.json();
+    const { action, ...payload } = body;
+
+    switch (action) {
+      case 'updateWeights': {
+        const { weights } = payload;
+        priorities = priorities.map(p => ({
+          ...p,
+          weight: weights[p.id] || p.weight
+        }));
+        return NextResponse.json({ success: true, priorities });
+      }
+      case 'setPreset': {
+        const { preset } = payload;
+        type PriorityId = 'priority_level' | 'task_fulfillment' | 'workload_balance' | 'skill_match' | 'phase_preference';
+        type PresetKey = 'maximize_fulfillment' | 'fair_distribution' | 'minimize_workload' | 'skill_focused';
+        const presets: Record<PresetKey, Record<PriorityId, number>> = {
+          maximize_fulfillment: {
+            priority_level: 0.4,
+            task_fulfillment: 0.35,
+            workload_balance: 0.1,
+            skill_match: 0.1,
+            phase_preference: 0.05
+          },
+          fair_distribution: {
+            priority_level: 0.2,
+            task_fulfillment: 0.2,
+            workload_balance: 0.4,
+            skill_match: 0.15,
+            phase_preference: 0.05
+          },
+          minimize_workload: {
+            priority_level: 0.15,
+            task_fulfillment: 0.15,
+            workload_balance: 0.5,
+            skill_match: 0.15,
+            phase_preference: 0.05
+          },
+          skill_focused: {
+            priority_level: 0.2,
+            task_fulfillment: 0.2,
+            workload_balance: 0.15,
+            skill_match: 0.4,
+            phase_preference: 0.05
+          }
+        };
+
+        if (preset && (preset in presets)) {
+          const presetKey = preset as PresetKey;
+          priorities = priorities.map(p => ({
+            ...p,
+            weight: presets[presetKey][p.id as PriorityId] ?? p.weight
+          }));
+          return NextResponse.json({ success: true, priorities, preset });
+        } else {
+          return NextResponse.json({ error: 'Invalid preset' }, { status: 400 });
         }
-        break;
-        
+      }
       default:
-        res.status(405).json({ error: 'Method not allowed' });
+        return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
   } catch (error) {
     console.error('Priorities API error:', error);
-    res.status(500).json({ error: 'Priorities operation failed' });
+    return NextResponse.json({ error: 'Priorities operation failed' }, { status: 500 });
   }
 }
