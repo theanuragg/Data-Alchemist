@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextApiRequest, NextApiResponse } from 'next';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -35,9 +35,7 @@ async function performNaturalLanguageSearch(query: string, data: any) {
 
   try {
     const result = await model.generateContent(prompt);
-    let response = result.response.text();
-    // Remove code block markers if present
-    response = response.replace(/```json|```/g, '').trim();
+    const response = result.response.text();
     return JSON.parse(response);
   } catch (error) {
     console.error('Natural language search error:', error);
@@ -51,19 +49,21 @@ async function performNaturalLanguageSearch(query: string, data: any) {
   }
 }
 
-// POST handler
-export async function POST(request: NextRequest) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
-    const body = await request.json();
-    const { query, data } = body;
+    const { query, data } = req.body;
 
     if (!query) {
-      return NextResponse.json({ error: 'Search query is required' }, { status: 400 });
+      return res.status(400).json({ error: 'Search query is required' });
     }
 
     const searchResults = await performNaturalLanguageSearch(query, data);
 
-    return NextResponse.json({
+    res.status(200).json({
       success: true,
       query,
       results: searchResults
@@ -71,6 +71,6 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Search error:', error);
-    return NextResponse.json({ error: 'Search failed' }, { status: 500 });
+    res.status(500).json({ error: 'Search failed' });
   }
 }

@@ -1,225 +1,397 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
-import { Upload, Search, Download, AlertCircle, CheckCircle, Settings, Sliders, FileText, Users, Briefcase, Target } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { 
+  Upload, 
+  CheckCircle, 
+  AlertTriangle, 
+  Search, 
+  Download, 
+  Settings, 
+  Wand2, 
+  Eye,
+  Edit3,
+  Trash2,
+  Plus,
+  Save,
+  X,
+  FileText,
+  Users,
+  Briefcase,
+  Bot,
+  Filter,
+  RefreshCw,
+  Target,
+  Sliders
+} from 'lucide-react';
 
-interface DataRow {
-  [key: string]: any;
-}
-
-interface ValidationError {
-  row?: number;
-  field: string;
-  message: string;
-  type?: string;
-}
-
-interface ValidationResults {
-  errors: ValidationError[];
-  warnings: ValidationError[];
-  isValid: boolean;
-  summary: {
-    totalRows: number;
-    errorCount: number;
-    warningCount: number;
+const DataAlchemist = () => {
+  // State management
+  type EntityType = 'clients' | 'workers' | 'tasks';
+  type DataState = {
+    clients: any[];
+    workers: any[];
+    tasks: any[];
+    [key: string]: any[]; // Add index signature for dynamic access
   };
-}
-
-interface Rule {
-  id: string;
-  type: string;
-  name: string;
-  config: any;
-}
-
-const DataAlchemist: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'clients' | 'workers' | 'tasks' | 'rules' | 'export'>('clients');
-  const [clientsData, setClientsData] = useState<DataRow[]>([]);
-  const [workersData, setWorkersData] = useState<DataRow[]>([]);
-  const [tasksData, setTasksData] = useState<DataRow[]>([]);
-  const [validationResults, setValidationResults] = useState<Record<string, ValidationResults>>({});
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<DataRow[]>([]);
-  const [rules, setRules] = useState<Rule[]>([]);
-  const [priorities, setPriorities] = useState({
-    priorityLevel: 0.3,
-    taskFulfillment: 0.25,
-    fairness: 0.2,
-    workloadBalance: 0.25
+  const [data, setData] = useState<DataState>({
+    clients: [],
+    workers: [],
+    tasks: []
   });
-  const [loading, setLoading] = useState(false);
-  const [ruleInput, setRuleInput] = useState('');
-  
-  const fileInputRefs = {
-    clients: useRef<HTMLInputElement>(null),
-    workers: useRef<HTMLInputElement>(null),
-    tasks: useRef<HTMLInputElement>(null)
+  type ValidationError = {
+    entityType: string;
+    type: string;
+    message: string;
+    entityId?: string;
+    field?: string;
+    [key: string]: any;
   };
+  type ValidationSummary = {
+    totalErrors: number;
+    totalWarnings: number;
+    criticalErrors: number;
+    entitiesWithErrors: number;
+    [key: string]: any;
+  };
+  type Validation = {
+    isValid: boolean;
+    summary: ValidationSummary;
+    errors: ValidationError[];
+    [key: string]: any;
+  };
+  const [validation, setValidation] = useState<Validation | null>(null);
+  type Rule = { description: string; source?: string; [key: string]: any };
+  const [rules, setRules] = useState<Rule[]>([]);
+  type Priority = { id: string; name: string; weight: number };
+  const [priorities, setPriorities] = useState<Priority[]>([]);
+  const [activeTab, setActiveTab] = useState('upload');
+  const [searchQuery, setSearchQuery] = useState('');
+  type SearchResults = {
+    interpretation: string;
+    matchCount: number;
+    clients: any[];
+    workers: any[];
+    tasks: any[];
+    [key: string]: any;
+  };
+  const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  type EditingCell = { row: number; field: string; entityType: string } | null;
+  const [editingCell, setEditingCell] = useState<EditingCell>(null);
+  const [newRuleDescription, setNewRuleDescription] = useState('');
+  const [modifyInstruction, setModifyInstruction] = useState('');
 
-  const handleFileUpload = useCallback(async (file: File, entityType: 'clients' | 'workers' | 'tasks') => {
+  // File upload handler
+  const handleFileUpload = async (file: string | Blob, entityType: string) => {
     setLoading(true);
+    setError('');
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('entityType', entityType);
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('entityType', entityType);
-      
       const response = await fetch('/api/upload', {
         method: 'POST',
-        body: formData
+        body: formData,
       });
-      
+
       const result = await response.json();
       
       if (result.success) {
-        switch (entityType) {
-          case 'clients':
-            setClientsData(result.data);
-            break;
-          case 'workers':
-            setWorkersData(result.data);
-            break;
-          case 'tasks':
-            setTasksData(result.data);
-            break;
-        }
-        
-        setValidationResults(prev => ({
+        setData(prev => ({
           ...prev,
-          [entityType]: result.validationResults
+          [entityType]: result.data
         }));
+        setSuccess(`${entityType} data uploaded successfully!`);
+        await validateData();
+      } else {
+        setError(result.error || 'Upload failed');
       }
-    } catch (error) {
-      console.error('Upload failed:', error);
+    } catch (err) {
+      setError('Network error during upload');
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
-  const handleCellEdit = useCallback(async (entityType: string, rowIndex: number, field: string, value: any) => {
-    let data: DataRow[];
-    let setData: React.Dispatch<React.SetStateAction<DataRow[]>>;
-    
-    switch (entityType) {
-      case 'clients':
-        data = clientsData;
-        setData = setClientsData;
-        break;
-      case 'workers':
-        data = workersData;
-        setData = setWorkersData;
-        break;
-      case 'tasks':
-        data = tasksData;
-        setData = setTasksData;
-        break;
-      default:
-        return;
-    }
-    
-    const updatedData = [...data];
-    updatedData[rowIndex][field] = value;
-    setData(updatedData);
-    
-    // Re-validate
+  // Validation
+  const validateData = async () => {
+    if (!data.clients.length && !data.workers.length && !data.tasks.length) return;
+
     try {
       const response = await fetch('/api/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: updatedData, entityType })
+        body: JSON.stringify(data),
       });
-      
-      const validationResult = await response.json();
-      setValidationResults(prev => ({
-        ...prev,
-        [entityType]: validationResult
-      }));
-    } catch (error) {
-      console.error('Validation failed:', error);
-    }
-  }, [clientsData, workersData, tasksData]);
 
-  const handleNaturalLanguageSearch = useCallback(async () => {
+      const result = await response.json();
+      setValidation(result);
+    } catch (err) {
+      console.error('Validation error:', err);
+    }
+  };
+
+  // Natural language search
+  const handleSearch = async () => {
     if (!searchQuery.trim()) return;
-    
+
     setLoading(true);
     try {
-      const allData = [...clientsData, ...workersData, ...tasksData];
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQuery, data: allData, entityType: activeTab })
+        body: JSON.stringify({ query: searchQuery, data }),
       });
-      
+
       const result = await response.json();
       setSearchResults(result.results);
-    } catch (error) {
-      console.error('Search failed:', error);
+    } catch (err) {
+      setError('Search failed');
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, clientsData, workersData, tasksData, activeTab]);
+  };
 
-  const handleAddRule = useCallback(async () => {
-    if (!ruleInput.trim()) return;
-    
-    // Simple rule parsing - in real implementation, this would use Gemini AI
-    const newRule: Rule = {
-      id: Date.now().toString(),
-      type: 'natural_language',
-      name: ruleInput.slice(0, 50) + '...',
-      config: { description: ruleInput }
-    };
-    
-    setRules(prev => [...prev, newRule]);
-    setRuleInput('');
-  }, [ruleInput]);
+  // Data modification
+  const handleModifyData = async () => {
+    if (!modifyInstruction.trim()) return;
 
-  const handleExport = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/modify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instruction: modifyInstruction, data }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success && result.result.success) {
+        setData(result.result.modifiedData);
+        setSuccess(`Applied ${result.result.changes.length} modifications`);
+        setModifyInstruction('');
+        await validateData();
+      } else {
+        setError(result.result.message || 'Modification failed');
+      }
+    } catch (err) {
+      setError('Modification failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Rule creation
+  const createRuleFromNaturalLanguage = async () => {
+    if (!newRuleDescription.trim()) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'createFromNaturalLanguage',
+          description: newRuleDescription,
+          data
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setRules(prev => [...prev, result.rule]);
+        setSuccess('Rule created successfully!');
+        setNewRuleDescription('');
+      } else {
+        setError('Could not create rule from description');
+      }
+    } catch (err) {
+      setError('Rule creation failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get rule recommendations
+  const getRuleRecommendations = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'getRecommendations',
+          data
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.recommendations) {
+        setRules(prev => [...prev, ...result.recommendations]);
+        setSuccess(`Added ${result.recommendations.length} rule recommendations`);
+      }
+    } catch (err) {
+      setError('Failed to get recommendations');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load priorities
+  const loadPriorities = async () => {
+    try {
+      const response = await fetch('/api/priorities');
+      const result = await response.json();
+      setPriorities(result.priorities || []);
+    } catch (err) {
+      console.error('Failed to load priorities');
+    }
+  };
+
+  // Update priority weights
+  const updatePriorityWeights = async (weights: {}) => {
+    try {
+      const response = await fetch('/api/priorities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateWeights',
+          weights
+        }),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setPriorities(result.priorities);
+        setSuccess('Priorities updated successfully!');
+      }
+    } catch (err) {
+      setError('Failed to update priorities');
+    }
+  };
+
+  // Export data
+  const handleExport = async (format = 'csv') => {
     setLoading(true);
     try {
       const response = await fetch('/api/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clients: clientsData,
-          workers: workersData,
-          tasks: tasksData,
-          rules: { rules, priorities }
-        })
+          data,
+          rules,
+          priorities: priorities.reduce((acc, p) => ({ ...acc, [p.id]: p.weight }), {}),
+          format
+        }),
       });
+
+      const result = await response.json();
       
-      const exportData = await response.json();
-      
-      // Download as JSON
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'resource-allocation-config.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Export failed:', error);
+      if (result.success) {
+        // Create download links for each file
+        Object.entries(result.files).forEach(([filename, content]) => {
+          // Ensure content is a string or ArrayBuffer for Blob
+          const safeContent = typeof content === 'string' || content instanceof ArrayBuffer ? content : JSON.stringify(content);
+          const blob = new Blob([safeContent], { 
+            type: filename.endsWith('.json') ? 'application/json' : 'text/csv' 
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+        
+        setSuccess('Files exported successfully!');
+      }
+    } catch (err) {
+      setError('Export failed');
     } finally {
       setLoading(false);
     }
-  }, [clientsData, workersData, tasksData, rules, priorities]);
+  };
 
-  const renderDataGrid = (data: DataRow[], entityType: string) => {
-    if (data.length === 0) {
-      return (
-        <div className="text-center py-12">
-          <FileText className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-semibold text-gray-900">No data</h3>
-          <p className="mt-1 text-sm text-gray-500">Upload a CSV or XLSX file to get started</p>
-        </div>
-      );
+  // Cell editing
+  const handleCellEdit = (entityType: string | number, rowIndex: any, field: string, value: string) => {
+    setData(prev => ({
+      ...prev,
+      [entityType]: prev[entityType].map((item, idx) => 
+        idx === rowIndex ? { ...item, [field]: value } : item
+      )
+    }));
+    setEditingCell(null);
+    validateData();
+  };
+
+  // Initialize
+  useEffect(() => {
+    loadPriorities();
+  }, []);
+
+  // Clear messages
+  useEffect(() => {
+    if (success || error) {
+      const timer = setTimeout(() => {
+        setSuccess('');
+        setError('');
+      }, 5000);
+      return () => clearTimeout(timer);
     }
+  }, [success, error]);
 
-    const headers = Object.keys(data[0]);
-    const validation = validationResults[entityType];
+  // File upload component
+  type FileUploadZoneProps = {
+    entityType: string;
+    icon: React.ElementType;
+    title: string;
+    description: string;
+  };
+  const FileUploadZone: React.FC<FileUploadZoneProps> = ({ entityType, icon: Icon, title, description }) => (
+    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-blue-500 transition-colors">
+      <input
+        type="file"
+        accept=".csv,.xlsx,.xls"
+        onChange={(e) => e.target.files && e.target.files[0] && handleFileUpload(e.target.files[0], entityType)}
+        className="hidden"
+        id={`upload-${entityType}`}
+      />
+      <label htmlFor={`upload-${entityType}`} className="cursor-pointer">
+        <div className="text-center">
+          <Icon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">{title}</h3>
+          <p className="text-sm text-gray-500 mb-4">{description}</p>
+          <div className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+            <Upload className="w-4 h-4 mr-2" />
+            Upload File
+          </div>
+        </div>
+      </label>
+      {data[entityType].length > 0 && (
+        <div className="mt-4 text-center">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            {data[entityType].length} records loaded
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  // Data table component
+  type DataTableProps = { entityType: string; data: any[] };
+  const DataTable: React.FC<DataTableProps> = ({ entityType, data: tableData }) => {
+    if (!tableData.length) return <div className="text-gray-500 text-center py-8">No data loaded</div>;
+
+    const headers = Object.keys(tableData[0]);
+    const hasErrors = validation?.errors?.some(error => error.entityType === entityType);
 
     return (
       <div className="overflow-x-auto">
@@ -231,491 +403,534 @@ const DataAlchemist: React.FC = () => {
                   {header}
                 </th>
               ))}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {data.map((row, rowIndex) => (
-              <tr key={rowIndex} className="hover:bg-gray-50">
-                {headers.map(header => {
-                  const hasError = validation?.errors?.some(error => 
-                    error.row === rowIndex && error.field === header
-                  );
-                  
-                  return (
-                    <td key={header} className={`px-6 py-4 whitespace-nowrap text-sm ${hasError ? 'bg-red-50 border-red-200' : ''}`}>
-                      <input
-                        type="text"
-                        value={row[header] || ''}
-                        onChange={(e) => handleCellEdit(entityType, rowIndex, header, e.target.value)}
-                        className={`w-full border-none bg-transparent focus:ring-2 focus:ring-blue-500 ${hasError ? 'text-red-900' : 'text-gray-900'}`}
-                      />
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {tableData.map((row, rowIndex) => {
+              const rowErrors = validation?.errors?.filter(error => 
+                error.entityType === entityType && 
+                (error.entityId === row[`${entityType.slice(0, -1).charAt(0).toUpperCase() + entityType.slice(1, -1)}ID`] || error.entityId === `row_${rowIndex}`)
+              ) || [];
+              
+              return (
+                <tr key={rowIndex} className={rowErrors.length > 0 ? 'bg-red-50' : ''}>
+                  {headers.map(header => {
+                    const cellError = rowErrors.find(error => error.field === header);
+                    const isEditing = editingCell?.row === rowIndex && editingCell?.field === header && editingCell?.entityType === entityType;
+                    
+                    return (
+                      <td key={header} className={`px-6 py-4 whitespace-nowrap text-sm ${cellError ? 'text-red-900' : 'text-gray-900'}`}>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            defaultValue={row[header]}
+                            onBlur={(e) => handleCellEdit(entityType, rowIndex, header, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleCellEdit(entityType, rowIndex, header, (e.target as HTMLInputElement).value);
+                              } else if (e.key === 'Escape') {
+                                setEditingCell(null);
+                              }
+                            }}
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            autoFocus
+                          />
+                        ) : (
+                          <div 
+                            className={`cursor-pointer hover:bg-gray-100 px-2 py-1 rounded ${cellError ? 'border border-red-300' : ''}`}
+                            onClick={() => setEditingCell({ row: rowIndex, field: header, entityType })}
+                            title={cellError ? cellError.message : 'Click to edit'}
+                          >
+                            {row[header]}
+                            {cellError && <AlertTriangle className="inline w-4 h-4 ml-1 text-red-500" />}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <button
+                      onClick={() => setEditingCell({ row: rowIndex, field: headers[0], entityType })}
+                      className="text-blue-600 hover:text-blue-900 mr-2"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
     );
   };
 
-  const renderValidationSummary = (entityType: string) => {
-    const validation = validationResults[entityType];
-    if (!validation) return null;
-
-    return (
-      <div className="mb-6 p-4 rounded-lg border">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            {validation.isValid ? (
-              <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
-            ) : (
-              <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
-            )}
-            <span className={`font-semibold ${validation.isValid ? 'text-green-800' : 'text-red-800'}`}>
-              {validation.isValid ? 'All validations passed' : `${validation.summary.errorCount} errors found`}
-            </span>
-          </div>
-          <div className="text-sm text-gray-600">
-            {validation.summary.totalRows} rows processed
-          </div>
-        </div>
-        
-        {validation.errors.length > 0 && (
-          <div className="mt-3">
-            <h4 className="font-medium text-red-800 mb-2">Errors:</h4>
-            <ul className="space-y-1">
-              {validation.errors.slice(0, 5).map((error, index) => (
-                <li key={index} className="text-sm text-red-700">
-                  {error.row !== undefined ? `Row ${error.row + 1}: ` : ''}{error.message}
-                </li>
-              ))}
-              {validation.errors.length > 5 && (
-                <li className="text-sm text-red-600">...and {validation.errors.length - 5} more errors</li>
-              )}
-            </ul>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderPrioritySliders = () => (
-    <div className="space-y-6">
-      <h3 className="text-lg font-semibold text-gray-900">Priority Weights</h3>
-      {Object.entries(priorities).map(([key, value]) => (
-        <div key={key} className="space-y-2">
-          <div className="flex justify-between">
-            <label className="text-sm font-medium text-gray-700 capitalize">
-              {key.replace(/([A-Z])/g, ' $1').trim()}
-            </label>
-            <span className="text-sm text-gray-500">{(value * 100).toFixed(0)}%</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={value}
-            onChange={(e) => setPriorities(prev => ({
-              ...prev,
-              [key]: parseFloat(e.target.value)
-            }))}
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
-          />
-        </div>
-      ))}
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">🚀 Data Alchemist</h1>
-              <p className="text-gray-600 mt-1">AI-Powered Resource Allocation Configurator</p>
+          <div className="flex justify-between items-center py-4">
+            <div className="flex items-center">
+              <Wand2 className="h-8 w-8 text-purple-600 mr-3" />
+              <h1 className="text-2xl font-bold text-gray-900">Data Alchemist</h1>
+              <span className="ml-3 px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full">AI-Powered</span>
             </div>
-            
-            {/* Natural Language Search */}
             <div className="flex items-center space-x-4">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search with natural language..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleNaturalLanguageSearch()}
-                  className="w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-              </div>
+              {validation && (
+                <div className="flex items-center">
+                  {validation.isValid ? (
+                    <span className="flex items-center text-green-600">
+                      <CheckCircle className="w-5 h-5 mr-1" />
+                      Valid
+                    </span>
+                  ) : (
+                    <span className="flex items-center text-red-600">
+                      <AlertTriangle className="w-5 h-5 mr-1" />
+                      {validation.summary.totalErrors} errors
+                    </span>
+                  )}
+                </div>
+              )}
               <button
-                onClick={handleNaturalLanguageSearch}
-                disabled={loading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                onClick={() => handleExport('csv')}
+                disabled={!data.clients.length && !data.workers.length && !data.tasks.length}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
               >
-                Search
+                <Download className="w-4 h-4 mr-2" />
+                Export
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <nav className="bg-white border-b">
+      {/* Navigation */}
+      <nav className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex space-x-8">
             {[
-              { key: 'clients', label: 'Clients', icon: Users },
-              { key: 'workers', label: 'Workers', icon: Briefcase },
-              { key: 'tasks', label: 'Tasks', icon: Target },
-              { key: 'rules', label: 'Rules', icon: Settings },
-              { key: 'export', label: 'Export', icon: Download }
-            ].map(({ key, label, icon: Icon }) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key as any)}
-                className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === key
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <Icon className="h-5 w-5 mr-2" />
-                {label}
-              </button>
-            ))}
+              { id: 'upload', label: 'Upload Data', icon: Upload },
+              { id: 'validate', label: 'Validate', icon: CheckCircle },
+              { id: 'search', label: 'AI Search', icon: Search },
+              { id: 'modify', label: 'AI Modify', icon: Bot },
+              { id: 'rules', label: 'Rules', icon: Settings },
+              { id: 'priorities', label: 'Priorities', icon: Target }
+            ].map(tab => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center px-3 py-4 text-sm font-medium border-b-2 ${
+                    activeTab === tab.id
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 mr-2" />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </nav>
 
+      {/* Messages */}
+      {(success || error) && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          {success && (
+            <div className="bg-green-50 border border-green-200 rounded-md p-4 mb-4">
+              <div className="flex">
+                <CheckCircle className="h-5 w-5 text-green-400 mr-2" />
+                <div className="text-sm text-green-700">{success}</div>
+                <button onClick={() => setSuccess('')} className="ml-auto">
+                  <X className="h-4 w-4 text-green-400" />
+                </button>
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-4">
+              <div className="flex">
+                <AlertTriangle className="h-5 w-5 text-red-400 mr-2" />
+                <div className="text-sm text-red-700">{error}</div>
+                <button onClick={() => setError('')} className="ml-auto">
+                  <X className="h-4 w-4 text-red-400" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {searchResults.length > 0 && (
-          <div className="mb-8 p-4 bg-blue-50 rounded-lg">
-            <h3 className="font-semibold text-blue-900 mb-2">Search Results ({searchResults.length} found)</h3>
-            <div className="space-y-2">
-              {searchResults.slice(0, 3).map((result, index) => (
-                <div key={index} className="text-sm text-blue-800">
-                  {Object.entries(result).slice(0, 3).map(([key, value]) => `${key}: ${value}`).join(', ')}
+        {activeTab === 'upload' && (
+          <div className="space-y-8">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900 mb-6">Upload Your Data Files</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <FileUploadZone
+                  entityType="clients"
+                  icon={Users}
+                  title="Clients"
+                  description="Upload client data (CSV/XLSX)"
+                />
+                <FileUploadZone
+                  entityType="workers"
+                  icon={Briefcase}
+                  title="Workers"
+                  description="Upload worker data (CSV/XLSX)"
+                />
+                <FileUploadZone
+                  entityType="tasks"
+                  icon={FileText}
+                  title="Tasks"
+                  description="Upload task data (CSV/XLSX)"
+                />
+              </div>
+            </div>
+
+            {/* Data Preview */}
+            {(data.clients.length > 0 || data.workers.length > 0 || data.tasks.length > 0) && (
+              <div className="space-y-6">
+                <h3 className="text-lg font-medium text-gray-900">Data Preview</h3>
+                
+                {data.clients.length > 0 && (
+                  <div>
+                    <h4 className="text-md font-medium text-gray-800 mb-3 flex items-center">
+                      <Users className="w-5 h-5 mr-2" />
+                      Clients ({data.clients.length} records)
+                    </h4>
+                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                      <DataTable entityType="clients" data={data.clients} />
+                    </div>
+                  </div>
+                )}
+
+                {data.workers.length > 0 && (
+                  <div>
+                    <h4 className="text-md font-medium text-gray-800 mb-3 flex items-center">
+                      <Briefcase className="w-5 h-5 mr-2" />
+                      Workers ({data.workers.length} records)
+                    </h4>
+                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                      <DataTable entityType="workers" data={data.workers} />
+                    </div>
+                  </div>
+                )}
+
+                {data.tasks.length > 0 && (
+                  <div>
+                    <h4 className="text-md font-medium text-gray-800 mb-3 flex items-center">
+                      <FileText className="w-5 h-5 mr-2" />
+                      Tasks ({data.tasks.length} records)
+                    </h4>
+                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                      <DataTable entityType="tasks" data={data.tasks} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'validate' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-medium text-gray-900">Data Validation</h2>
+              <button
+                onClick={validateData}
+                disabled={loading}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Re-validate
+              </button>
+            </div>
+
+            {validation && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-gray-900">{validation.summary.totalErrors}</div>
+                    <div className="text-sm text-red-600">Errors</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-gray-900">{validation.summary.totalWarnings}</div>
+                    <div className="text-sm text-yellow-600">Warnings</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-gray-900">{validation.summary.criticalErrors}</div>
+                    <div className="text-sm text-red-800">Critical</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-gray-900">{validation.summary.entitiesWithErrors}</div>
+                    <div className="text-sm text-gray-600">Affected Entities</div>
+                  </div>
                 </div>
-              ))}
+
+                {validation.errors.length > 0 && (
+                  <div>
+                    <h3 className="text-md font-medium text-red-800 mb-3">Errors</h3>
+                    <div className="space-y-2">
+                      {validation.errors.map((error, index) => (
+                        <div key={index} className="bg-red-50 border border-red-200 rounded p-3">
+                          <div className="flex items-start">
+                            <AlertTriangle className="w-5 h-5 text-red-500 mr-2 mt-0.5" />
+                            <div>
+                              <div className="text-sm font-medium text-red-800">
+                                {error.entityType} - {error.type}
+                              </div>
+                              <div className="text-sm text-red-700">{error.message}</div>
+                              {error.entityId && (
+                                <div className="text-xs text-red-600 mt-1">
+                                  Entity: {error.entityId} {error.field && `| Field: ${error.field}`}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'search' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900 mb-6">AI-Powered Natural Language Search</h2>
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="flex space-x-4">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="e.g., 'Show all high priority clients with tasks requiring JavaScript skills'"
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  />
+                  <button
+                    onClick={handleSearch}
+                    disabled={loading || !searchQuery.trim()}
+                    className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    <Search className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                    Search
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {searchResults && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-md font-medium text-gray-900 mb-4">
+                  Search Results ({searchResults.matchCount} matches)
+                </h3>
+                <div className="text-sm text-gray-600 mb-4">
+                  <strong>Interpretation:</strong> {searchResults.interpretation}
+                </div>
+                
+                {searchResults.clients.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="font-medium text-gray-800 mb-2">Clients ({searchResults.clients.length})</h4>
+                    <DataTable entityType="clients" data={searchResults.clients} />
+                  </div>
+                )}
+                
+                {searchResults.workers.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="font-medium text-gray-800 mb-2">Workers ({searchResults.workers.length})</h4>
+                    <DataTable entityType="workers" data={searchResults.workers} />
+                  </div>
+                )}
+                
+                {searchResults.tasks.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-gray-800 mb-2">Tasks ({searchResults.tasks.length})</h4>
+                    <DataTable entityType="tasks" data={searchResults.tasks} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'modify' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900 mb-6">AI Data Modification</h2>
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="mb-4">
+                  <textarea
+                    value={modifyInstruction}
+                    onChange={(e) => setModifyInstruction(e.target.value)}
+                    placeholder="e.g., 'Increase all client priority levels by 1' or 'Add JavaScript skill to all workers in the Development group'"
+                    rows={4}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button
+                  onClick={handleModifyData}
+                  disabled={loading || !modifyInstruction.trim()}
+                  className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
+                >
+                  <Bot className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                  Apply Modification
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Data Upload and Management */}
-        {(activeTab === 'clients' || activeTab === 'workers' || activeTab === 'tasks') && (
+        {activeTab === 'rules' && (
           <div className="space-y-6">
-            {/* File Upload */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900 capitalize">{activeTab} Data</h2>
-                <div className="flex items-center space-x-4">
-                  <input
-                    ref={fileInputRefs[activeTab]}
-                    type="file"
-                    accept=".csv,.xlsx,.xls"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleFileUpload(file, activeTab);
-                    }}
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => fileInputRefs[activeTab].current?.click()}
-                    disabled={loading}
-                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    {loading ? 'Uploading...' : 'Upload File'}
-                  </button>
-                </div>
-              </div>
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-medium text-gray-900">Business Rules</h2>
+              <button
+                onClick={getRuleRecommendations}
+                disabled={loading}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              >
+                <Sliders className="w-4 h-4 mr-2" />
+                Get Recommendations
+              </button>
+            </div>
 
-              {renderValidationSummary(activeTab)}
-              {renderDataGrid(
-                activeTab === 'clients' ? clientsData : 
-                activeTab === 'workers' ? workersData : tasksData,
-                activeTab
+            {/* Rule creation from natural language */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex space-x-4">
+                <input
+                  type="text"
+                  value={newRuleDescription}
+                  onChange={(e) => setNewRuleDescription(e.target.value)}
+                  placeholder="Describe a new business rule in natural language"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={(e) => e.key === 'Enter' && createRuleFromNaturalLanguage()}
+                />
+                <button
+                  onClick={createRuleFromNaturalLanguage}
+                  disabled={loading || !newRuleDescription.trim()}
+                  className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Rule
+                </button>
+              </div>
+            </div>
+
+            {/* Rules List */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-md font-medium text-gray-900 mb-4">Current Rules ({rules.length})</h3>
+              {rules.length === 0 ? (
+                <div className="text-gray-500 text-center py-8">No rules defined yet.</div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {rules.map((rule, idx) => (
+                      <tr key={idx}>
+                        <td className="px-6 py-4 whitespace-pre-line text-sm text-gray-900">{rule.description}</td>
+                        <td className="px-6 py-4 text-sm text-gray-500">{rule.source || 'User'}</td>
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          {/* Remove rule button */}
+                          <button
+                            onClick={() => setRules(rules.filter((_, i) => i !== idx))}
+                            className="text-red-600 hover:text-red-900"
+                            title="Remove rule"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
           </div>
         )}
 
-        {/* Rules Management */}
-        {activeTab === 'rules' && (
+        {/* Priorities Tab */}
+        {activeTab === 'priorities' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Business Rules</h2>
-              
-              {/* Natural Language Rule Input */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Add Rule in Natural Language
-                </label>
-                <div className="flex space-x-4">
-                  <input
-                    type="text"
-                    value={ruleInput}
-                    onChange={(e) => setRuleInput(e.target.value)}
-                    placeholder="e.g., Tasks T12 and T14 should always run together"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  <button
-                    onClick={handleAddRule}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                  >
-                    Add Rule
-                  </button>
-                </div>
-              </div>
-
-              {/* Predefined Rule Templates */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                {[
-                  { type: 'coRun', name: 'Co-run Tasks', desc: 'Tasks that must run together' },
-                  { type: 'loadLimit', name: 'Load Limit', desc: 'Maximum workload per worker group' },
-                  { type: 'phaseWindow', name: 'Phase Window', desc: 'Restrict tasks to specific phases' },
-                  { type: 'precedence', name: 'Precedence', desc: 'Task execution order' },
-                  { type: 'skillMatch', name: 'Skill Matching', desc: 'Match tasks to worker skills' },
-                  { type: 'fairness', name: 'Fair Distribution', desc: 'Ensure balanced workload' }
-                ].map((template) => (
-                  <div key={template.type} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer">
-                    <h3 className="font-medium text-gray-900">{template.name}</h3>
-                    <p className="text-sm text-gray-600 mt-1">{template.desc}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Current Rules */}
-              <div>
-                <h3 className="font-medium text-gray-900 mb-3">Current Rules ({rules.length})</h3>
-                {rules.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No rules defined yet. Add rules using natural language or templates above.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {rules.map((rule) => (
-                      <div key={rule.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div>
-                          <span className="font-medium text-gray-900">{rule.name}</span>
-                          <span className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">{rule.type}</span>
-                        </div>
-                        <button
-                          onClick={() => setRules(prev => prev.filter(r => r.id !== rule.id))}
-                          className="text-red-600 hover:text-red-800"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-medium text-gray-900">Priorities</h2>
+              <button
+                onClick={loadPriorities}
+                disabled={loading}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Reload
+              </button>
             </div>
-
-            {/* Priority Weights */}
             <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center mb-4">
-                <Sliders className="h-5 w-5 text-gray-600 mr-2" />
-                <h2 className="text-xl font-semibold text-gray-900">Priority Configuration</h2>
-              </div>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div>
-                  {renderPrioritySliders()}
-                </div>
-                
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Preset Profiles</h3>
-                  <div className="space-y-3">
-                    {[
-                      { name: 'Maximize Fulfillment', config: { priorityLevel: 0.4, taskFulfillment: 0.4, fairness: 0.1, workloadBalance: 0.1 } },
-                      { name: 'Fair Distribution', config: { priorityLevel: 0.2, taskFulfillment: 0.2, fairness: 0.4, workloadBalance: 0.2 } },
-                      { name: 'Minimize Workload', config: { priorityLevel: 0.2, taskFulfillment: 0.2, fairness: 0.2, workloadBalance: 0.4 } },
-                      { name: 'Balanced Approach', config: { priorityLevel: 0.25, taskFulfillment: 0.25, fairness: 0.25, workloadBalance: 0.25 } }
-                    ].map((preset) => (
-                      <button
-                        key={preset.name}
-                        onClick={() => setPriorities(preset.config)}
-                        className="w-full text-left p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
-                      >
-                        <div className="font-medium text-gray-900">{preset.name}</div>
-                        <div className="text-sm text-gray-600 mt-1">
-                          Priority: {(preset.config.priorityLevel * 100).toFixed(0)}%, 
-                          Fulfillment: {(preset.config.taskFulfillment * 100).toFixed(0)}%, 
-                          Fairness: {(preset.config.fairness * 100).toFixed(0)}%, 
-                          Balance: {(preset.config.workloadBalance * 100).toFixed(0)}%
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Export */}
-        {activeTab === 'export' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Export Configuration</h2>
-              
-              {/* Data Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <Users className="h-8 w-8 text-blue-600 mx-auto mb-2" />
-                  <div className="text-2xl font-bold text-blue-900">{clientsData.length}</div>
-                  <div className="text-sm text-blue-700">Clients</div>
-                </div>
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <Briefcase className="h-8 w-8 text-green-600 mx-auto mb-2" />
-                  <div className="text-2xl font-bold text-green-900">{workersData.length}</div>
-                  <div className="text-sm text-green-700">Workers</div>
-                </div>
-                <div className="text-center p-4 bg-purple-50 rounded-lg">
-                  <Target className="h-8 w-8 text-purple-600 mx-auto mb-2" />
-                  <div className="text-2xl font-bold text-purple-900">{tasksData.length}</div>
-                  <div className="text-sm text-purple-700">Tasks</div>
-                </div>
-              </div>
-
-              {/* Validation Status */}
-              <div className="mb-6">
-                <h3 className="font-medium text-gray-900 mb-3">Validation Status</h3>
-                <div className="space-y-2">
-                  {['clients', 'workers', 'tasks'].map(entityType => {
-                    const validation = validationResults[entityType];
-                    const hasData = 
-                      (entityType === 'clients' && clientsData.length > 0) ||
-                      (entityType === 'workers' && workersData.length > 0) ||
-                      (entityType === 'tasks' && tasksData.length > 0);
-                    
-                    return (
-                      <div key={entityType} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <span className="capitalize font-medium">{entityType}</span>
-                        <div className="flex items-center">
-                          {!hasData ? (
-                            <span className="text-gray-500">No data</span>
-                          ) : validation?.isValid ? (
-                            <>
-                              <CheckCircle className="h-4 w-4 text-green-500 mr-1" />
-                              <span className="text-green-700">Valid</span>
-                            </>
-                          ) : (
-                            <>
-                              <AlertCircle className="h-4 w-4 text-red-500 mr-1" />
-                              <span className="text-red-700">{validation?.summary.errorCount || 0} errors</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Rules Summary */}
-              <div className="mb-6">
-                <h3 className="font-medium text-gray-900 mb-3">Rules & Priorities</h3>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="mb-3">
-                    <span className="font-medium">Business Rules: </span>
-                    <span className="text-gray-600">{rules.length} rules defined</span>
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    <div>Priority Level Weight: {(priorities.priorityLevel * 100).toFixed(0)}%</div>
-                    <div>Task Fulfillment Weight: {(priorities.taskFulfillment * 100).toFixed(0)}%</div>
-                    <div>Fairness Weight: {(priorities.fairness * 100).toFixed(0)}%</div>
-                    <div>Workload Balance Weight: {(priorities.workloadBalance * 100).toFixed(0)}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Export Options */}
-              <div className="space-y-4">
-                <h3 className="font-medium text-gray-900">Export Options</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <h3 className="text-md font-medium text-gray-900 mb-4">Adjust Priority Weights</h3>
+              {priorities.length === 0 ? (
+                <div className="text-gray-500 text-center py-8">No priorities defined.</div>
+              ) : (
+                <form
+                  onSubmit={e => {
+                    e.preventDefault();
+                    const formData = new FormData(e.target as HTMLFormElement);
+                    const weights: { [key: string]: number } = {};
+                    priorities.forEach(p => {
+                      weights[p.id] = Number(formData.get(p.id));
+                    });
+                    updatePriorityWeights(weights);
+                  }}
+                >
+                  <table className="min-w-full divide-y divide-gray-200 mb-4">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {priorities.map((priority) => (
+                        <tr key={priority.id}>
+                          <td className="px-6 py-4 text-sm text-gray-900">{priority.name}</td>
+                          <td className="px-6 py-4 text-sm text-gray-900">
+                            <input
+                              type="number"
+                              name={priority.id}
+                              defaultValue={priority.weight}
+                              min={0}
+                              step={1}
+                              className="w-24 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                   <button
-                    onClick={handleExport}
-                    disabled={loading || (clientsData.length === 0 && workersData.length === 0 && tasksData.length === 0)}
-                    className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="submit"
+                    className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
                   >
-                    <Download className="h-5 w-5 mr-2" />
-                    {loading ? 'Exporting...' : 'Export Complete Package'}
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Weights
                   </button>
-                  
-                  <button
-                    onClick={async () => {
-                      const rulesBlob = new Blob([JSON.stringify({ rules, priorities }, null, 2)], { type: 'application/json' });
-                      const url = URL.createObjectURL(rulesBlob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'rules-config.json';
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                    disabled={rules.length === 0}
-                    className="flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Settings className="h-5 w-5 mr-2" />
-                    Export Rules Only
-                  </button>
-                </div>
-                
-                <p className="text-sm text-gray-600">
-                  The complete package includes cleaned data files (CSV format) and a rules.json file ready for downstream allocation tools.
-                </p>
-              </div>
-            </div>
-
-            {/* AI Insights */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">AI Insights & Recommendations</h3>
-              
-              <div className="space-y-4">
-                {clientsData.length > 0 && workersData.length > 0 && tasksData.length > 0 ? (
-                  <>
-                    <div className="p-4 bg-blue-50 rounded-lg">
-                      <h4 className="font-medium text-blue-900">Data Quality</h4>
-                      <p className="text-sm text-blue-800 mt-1">
-                        Your data coverage looks good with {clientsData.length} clients, {workersData.length} workers, and {tasksData.length} tasks.
-                        {Object.values(validationResults).every(v => v?.isValid) 
-                          ? ' All validation checks passed!' 
-                          : ' Some validation issues need attention.'}
-                      </p>
-                    </div>
-                    
-                    <div className="p-4 bg-yellow-50 rounded-lg">
-                      <h4 className="font-medium text-yellow-900">Optimization Suggestions</h4>
-                      <p className="text-sm text-yellow-800 mt-1">
-                        Consider adding co-run rules for tasks that frequently appear together in client requests.
-                        {rules.length === 0 && ' You might want to define some business rules to improve allocation efficiency.'}
-                      </p>
-                    </div>
-                    
-                    <div className="p-4 bg-green-50 rounded-lg">
-                      <h4 className="font-medium text-green-900">Ready for Export</h4>
-                      <p className="text-sm text-green-800 mt-1">
-                        Your configuration is ready for export. The downstream allocation system will use your priority weights and business rules to optimize resource assignments.
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <h4 className="font-medium text-gray-900">Getting Started</h4>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Upload your client, worker, and task data files to begin configuration. The AI will help validate your data and suggest optimizations.
-                    </p>
-                  </div>
-                )}
-              </div>
+                </form>
+              )}
             </div>
           </div>
         )}
