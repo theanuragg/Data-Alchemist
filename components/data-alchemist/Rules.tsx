@@ -43,7 +43,7 @@ const RuleEditor: React.FC<RuleEditorProps> = ({
             value={newRuleDescription}
             onChange={(e) => setNewRuleDescription(e.target.value)}
             placeholder="Describe a new business rule in natural language"
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none "
             onKeyDown={(e) => e.key === 'Enter' && onCreateRule()}
           />
           <button
@@ -64,17 +64,17 @@ const RuleEditor: React.FC<RuleEditorProps> = ({
           <div className="text-gray-500 text-center py-8">No rules defined yet.</div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-black">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-sans text-gray-500 uppercase tracking-wider">Description</th>
                 <th className="px-6 py-3 text-left text-xs font-sans text-gray-500 uppercase tracking-wider">Source</th>
                 <th className="px-6 py-3 text-left text-xs font-sans text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-black divide-y divide-gray-200">
               {rules.map((rule, idx) => (
                 <tr key={idx}>
-                  <td className="px-6 py-4 whitespace-pre-line text-sm text-gray-100">{rule.description}</td>
+                  <td className="px-6 py-4 whitespace-pre-line font-sans text-sm text-gray-100">{rule.description}</td>
                   <td className="px-6 py-4 text-sm text-gray-500">{rule.source || 'User'}</td>
                   <td className="px-6 py-4 text-sm text-gray-500">
                     <button

@@ -14,19 +14,21 @@ const Header: React.FC<HeaderProps> = ({ validation, hasData, onExport }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center py-4">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-white">Data Alchemist</h1>
-            <Wand2 className="h-6 w-6 text-purple-600 mr-3" />
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-300  to-blue-500 bg-clip-text text-transparent">
+              Data Alchemist
+            </h1>
+            <Wand2 className="h-6 w-6 text-blue-500 mr-3" />
           </div>
           <div className="flex items-center space-x-4">
             {validation && (
               <div className="flex items-center">
                 {validation.isValid ? (
-                  <span className="flex items-center rounded-lg font-sans text-sm bg-gradient-to-b from-green-500 to-green-900 text-white px-3 py-3">
+                  <span className="flex items-center rounded-lg font-sans text-sm bg-gradient-to-b from-green-500 to-green-900 text-white px-3 py-2">
                     <CheckCircle className="w-5 h-5 mr-1" />
                     Valid
                   </span>
                 ) : (
-                  <span className="flex items-center rounded-lg font-sans text-sm bg-gradient-to-b from-red-500 to-red-900 text-white px-3 py-3">
+                  <span className="flex items-center rounded-lg font-sans text-sm bg-gradient-to-b from-red-500 to-red-900 text-white px-3 py-2">
                     <AlertTriangle className="w-5 h-5 mr-1" />
                     {validation.summary.totalErrors} errors
                   </span>

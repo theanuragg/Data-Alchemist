@@ -490,13 +490,13 @@ const DataAlchemist: React.FC = () => {
                     onChange={(e) => setModifyInstruction(e.target.value)}
                     placeholder="e.g., 'Increase all client priority levels by 1' or 'Add JavaScript skill to all workers in the Development group'"
                     rows={4}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none "
                   />
                 </div>
                 <button
                   onClick={handleModifyData}
                   disabled={loading || !modifyInstruction.trim()}
-                  className="inline-flex items-center px-6 py-2  text-sm font-sans rounded-md text-whitebg-gradient-to-b from-blue-200 to-blue-500 disabled:opacity-50"
+                  className="inline-flex items-center px-6 py-2  text-sm font-sans rounded-md text-white bg-gradient-to-b from-blue-200 to-blue-500 disabled:opacity-50"
                 >
                   <Bot className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                   Apply Modification

@@ -37,13 +37,13 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="e.g., 'Show all high priority clients with tasks requiring JavaScript skills'"
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none "
               onKeyDown={(e) => e.key === 'Enter' && onSearch()}
             />
             <button
               onClick={onSearch}
               disabled={loading || !searchQuery.trim()}
-              className="inline-flex items-center px-6 py-2  text-sm font-sans rounded-md text-whitebg-gradient-to-b from-blue-200 to-blue-500  disabled:opacity-50"
+              className="inline-flex items-center px-6 py-2  text-sm font-sans rounded-md text-white bg-gradient-to-b from-blue-200 to-blue-500  disabled:opacity-50"
             >
               <Search className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Search
@@ -53,17 +53,17 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
       </div>
 
       {searchResults && (
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-black rounded-lg shadow p-6">
           <h3 className="text-md font-sans text-gray-100 mb-4">
             Search Results ({searchResults.matchCount} matches)
           </h3>
-          <div className="text-sm text-gray-600 mb-4">
+          <div className="text-sm text-gray-400 mb-4">
             <strong>Interpretation:</strong> {searchResults.interpretation}
           </div>
           
           {searchResults.clients.length > 0 && (
             <div className="mb-6">
-              <h4 className="font-sans text-gray-800 mb-2">Clients ({searchResults.clients.length})</h4>
+              <h4 className="font-sans text-gray-200 mb-2">Clients ({searchResults.clients.length})</h4>
               <DataTable
                 entityType="clients"
                 data={searchResults.clients}
